@@ -32,25 +32,50 @@ public class TPostReportRow implements Serializable {
     @ApiModelProperty(value = "主键")
     private Long id;
 
+    /** 报送期（如2026-09），同一期可分多个批次号报送 */
+    @TableField("period")
+    @ApiModelProperty(value = "报送期")
+    private String period;
+
     /** 月度业务报表报送批次号 */
     @TableField("batch_no")
     @ApiModelProperty(value = "月度业务报表报送批次号")
     private String batchNo;
 
-    /** 原报表行次 */
+    /** 进门行次（按进门先后钉死，合并重复行认前头那一个） */
     @TableField("row_no")
-    @ApiModelProperty(value = "原报表行次")
+    @ApiModelProperty(value = "进门行次")
     private Integer rowNo;
 
-    /** 被挑出的前置项代号 */
+    /** 本行网点行址代号（须在报送企业名下的网点备案卡） */
+    @TableField("site_no")
+    @ApiModelProperty(value = "本行网点行址代号")
+    private String siteNo;
+
+    /** 挂起前置项代号（收下为空） */
     @TableField("item_code")
-    @ApiModelProperty(value = "被挑出的前置项代号")
+    @ApiModelProperty(value = "挂起前置项代号")
     private String itemCode;
 
     /** 本行报送业务量(万件) */
     @TableField("qty")
     @ApiModelProperty(value = "本行报送业务量(万件)")
     private BigDecimal qty;
+
+    /** 投递频次 1每周五日 2每日 */
+    @TableField("freq")
+    @ApiModelProperty(value = "投递频次 1每周五日 2每日")
+    private Integer freq;
+
+    /** 上一期挂下来的那笔差异(万件) */
+    @TableField("prev_diff")
+    @ApiModelProperty(value = "上一期挂下来的那笔差异(万件)")
+    private BigDecimal prevDiff;
+
+    /** 本期核销掉的上期差异(万件)，不得大过prevDiff */
+    @TableField("write_off")
+    @ApiModelProperty(value = "本期核销掉的上期差异(万件)")
+    private BigDecimal writeOff;
 
     /** 行落地情形 0待核 1已收 2挂起 */
     @TableField("status")
@@ -89,6 +114,19 @@ public class TPostReportRow implements Serializable {
     @ApiModelProperty(value = "备注")
     private String remark;
 
+    /** 报送企业底档字号（仅随整册入参传入，不入库；落库在批次回执上） */
+    @TableField(exist = false)
+    @ApiModelProperty(value = "报送企业底档字号（仅入参）")
+    private String companySiteNo;
+
+    public String getCompanySiteNo() {
+        return companySiteNo;
+    }
+
+    public void setCompanySiteNo(String companySiteNo) {
+        this.companySiteNo = companySiteNo;
+    }
+
     public Long getId() {
         return id;
     }
@@ -101,6 +139,14 @@ public class TPostReportRow implements Serializable {
         return batchNo;
     }
 
+    public String getPeriod() {
+        return period;
+    }
+
+    public void setPeriod(String period) {
+        this.period = period;
+    }
+
     public void setBatchNo(String batchNo) {
         this.batchNo = batchNo;
     }
@@ -111,6 +157,14 @@ public class TPostReportRow implements Serializable {
 
     public void setRowNo(Integer rowNo) {
         this.rowNo = rowNo;
+    }
+
+    public String getSiteNo() {
+        return siteNo;
+    }
+
+    public void setSiteNo(String siteNo) {
+        this.siteNo = siteNo;
     }
 
     public String getItemCode() {
@@ -127,6 +181,30 @@ public class TPostReportRow implements Serializable {
 
     public void setQty(BigDecimal qty) {
         this.qty = qty;
+    }
+
+    public Integer getFreq() {
+        return freq;
+    }
+
+    public void setFreq(Integer freq) {
+        this.freq = freq;
+    }
+
+    public BigDecimal getPrevDiff() {
+        return prevDiff;
+    }
+
+    public void setPrevDiff(BigDecimal prevDiff) {
+        this.prevDiff = prevDiff;
+    }
+
+    public BigDecimal getWriteOff() {
+        return writeOff;
+    }
+
+    public void setWriteOff(BigDecimal writeOff) {
+        this.writeOff = writeOff;
     }
 
     public Integer getStatus() {

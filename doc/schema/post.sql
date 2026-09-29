@@ -112,19 +112,50 @@ CREATE TABLE IF NOT EXISTS t_post_rectify_card (
 
 CREATE TABLE IF NOT EXISTS t_post_report_row (
   id bigint NOT NULL COMMENT '主键',
-  batch_no varchar(64) DEFAULT NULL COMMENT '月度业务报表报送批次号',
-  row_no int DEFAULT NULL COMMENT '原报表行次',
-  item_code varchar(64) DEFAULT NULL COMMENT '被挑出的前置项代号',
+  period varchar(32) DEFAULT NULL COMMENT '报送期（如2026-09），同一期可分多个批次号报送',
+  batch_no varchar(64) DEFAULT NULL COMMENT '月度业务报表报送批次号（一沓一个批次号，多沓各起各号）',
+  row_no int DEFAULT NULL COMMENT '进门行次（按进门先后钉死，合并重复行认前头那一个）',
+  site_no varchar(64) DEFAULT NULL COMMENT '本行网点行址代号（取网点备案建档卡bill_no，须在报送企业名下）',
   qty decimal(12,2) DEFAULT NULL COMMENT '本行报送业务量(万件)',
+  freq int DEFAULT NULL COMMENT '投递频次 1每周五日 2每日',
+  prev_diff decimal(12,2) DEFAULT NULL COMMENT '上一期挂下来的那笔差异(万件)',
+  write_off decimal(12,2) DEFAULT NULL COMMENT '本期核销掉的上期差异(万件)，不得大过prev_diff',
+  item_code varchar(64) DEFAULT NULL COMMENT '挂起前置项代号（收下为空）：OUTLET_NOT_OWNED/QTY_EMPTY/QTY_NONPOSITIVE/PREV_DIFF_OPEN/WRITEOFF_EXCEED',
   status int DEFAULT NULL COMMENT '行落地情形 0待核 1已收 2挂起',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
-  remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  remark varchar(500) DEFAULT NULL COMMENT '挂起缘故一句话（收下为空）',
+  PRIMARY KEY (id),
+  KEY idx_report_period (period),
+  KEY idx_report_batch (batch_no),
+  KEY idx_report_site (site_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='月度业务报表核收行';
+
+-- 整册回执：与逐行在同一事务同一回计算里落账，只许整册服务方法写入，界面不得自数。
+-- 日后对账拿这张快照同 t_post_report_row 逐行重算比对，差在哪批哪行点哪批哪行。
+CREATE TABLE IF NOT EXISTS t_post_report_receipt (
+  id bigint NOT NULL COMMENT '主键',
+  batch_no varchar(64) NOT NULL COMMENT '报送批次号（一沓一号，唯一）',
+  period varchar(32) DEFAULT NULL COMMENT '报送期',
+  total_rows int DEFAULT NULL COMMENT '本期落账总行数（收下+挂起，重复网点已并作一行）',
+  accepted_rows int DEFAULT NULL COMMENT '已收行数',
+  suspended_rows int DEFAULT NULL COMMENT '挂起行数',
+  merged_rows int DEFAULT 0 COMMENT '同网点重复并掉的行数（不计入总数）',
+  accepted_qty decimal(14,2) DEFAULT NULL COMMENT '已收行业务量合计(万件)',
+  outcome int DEFAULT NULL COMMENT '回执情形 1核收 2空期 3整期退回 4复核(不落库)',
+  message varchar(255) DEFAULT NULL COMMENT '回执一句话（空期只写空期，不许报核讫）',
+  del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
+  create_by varchar(64) DEFAULT NULL COMMENT '创建者',
+  create_time datetime DEFAULT NULL COMMENT '创建时间',
+  update_by varchar(64) DEFAULT NULL COMMENT '更新者',
+  update_time datetime DEFAULT NULL COMMENT '更新时间',
+  remark varchar(500) DEFAULT NULL COMMENT '备注',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_report_receipt_batch (batch_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='月度业务报表整册回执';
 
 -- 初始底档数据（在册、已注销两类各一条）
 -- t_post_company_arch 两条种子底档：id=0 在册、id=1 已注销。

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.pollix.at/thymeleaf/shiro">
+<head>
+    <th:block th:include="include :: header('月度业务报表核收')"/>
+</head>
+<body class="pear-container">
+<div class="layui-card">
+    <div class="layui-card-body">
+        <form class="layui-form" action="">
+            <div class="layui-form-item">
+                <label class="layui-form-label">报送期</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="period" placeholder="如 2026-09" class="layui-input">
+                </div>
+                <label class="layui-form-label">批次号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="batchNo" placeholder="一沓一号" class="layui-input">
+                </div>
+                <label class="layui-form-label">报送企业字号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="companySiteNo" placeholder="在册底档字号" class="layui-input">
+                </div>
+            </div>
+            <div class="layui-form-item">
+                <label class="layui-form-label">逐行报表</label>
+                <div class="layui-input-block">
+                    <textarea name="rowsText" class="layui-textarea" style="height:150px;"
+                              placeholder='每行一网点，JSON 数组。例：
+[{"siteNo":"WD001","qty":12.5,"freq":2,"prevDiff":3,"writeOff":3},
+ {"siteNo":"WD002","qty":0,"freq":1}]
+投递频次：1每周五日 2每日。行次进门即钉死，同网点同期限一行。'></textarea>
+                </div>
+            </div>
+            <div class="layui-form-item">
+                <div class="layui-input-block">
+                    <button class="pear-btn pear-btn-md pear-btn-primary" lay-submit lay-filter="book-submit">
+                        <i class="layui-icon layui-icon-upload"></i> 整册报送
+                    </button>
+                    <button type="button" class="pear-btn pear-btn-md" id="btn-receipt">
+                        <i class="layui-icon layui-icon-search"></i> 取回执
+                    </button>
+                    <button type="button" class="pear-btn pear-btn-md" id="btn-rows">
+                        <i class="layui-icon layui-icon-list"></i> 看逐行
+                    </button>
+                    <button type="button" class="pear-btn pear-btn-md pear-btn-warming" id="btn-reconcile">
+                        <i class="layui-icon layui-icon-vertical"></i> 全辖对账
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="layui-card">
+    <div class="layui-card-body">
+        <table class="layui-table" style="margin-top:0;">
+            <thead>
+            <tr>
+                <th>情形</th>
+                <th>本期总行数</th>
+                <th>已收行数</th>
+                <th>挂起行数</th>
+                <th>重复并掉</th>
+                <th>已收业务量合计(万件)</th>
+                <th>回执</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td id="rc-outcome">—</td>
+                <td id="rc-total">—</td>
+                <td id="rc-accepted">—</td>
+                <td id="rc-suspended">—</td>
+                <td id="rc-merged">—</td>
+                <td id="rc-qty">—</td>
+                <td id="rc-msg">—</td>
+            </tr>
+            </tbody>
+        </table>
+        <blockquote class="layui-elem-quote" style="font-size:12px;color:#888;">
+            三数取自业务服务层整册处理方法同一回计算（收下+挂起=原期行数），本页不自行计数；空期只写“空期”，不报核讫。
+        </blockquote>
+    </div>
+</div>
+
+<div class="layui-card">
+    <div class="layui-card-header">逐行落账（按进门行次）</div>
+    <div class="layui-card-body">
+        <table id="row-table"></table>
+    </div>
+</div>
+
+<div class="layui-card" id="mismatch-card" style="display:none;">
+    <div class="layui-card-header">对账不平——差在以下批次/行（不按比例摊）</div>
+    <div class="layui-card-body">
+        <table id="mismatch-table"></table>
+    </div>
+</div>
+
+<th:block th:include="include :: footer"/>
+<script>
+    layui.use(['table', 'form', 'jquery', 'layer'], function () {
+        let table = layui.table;
+        let form = layui.form;
+        let $ = layui.jquery;
+        let layer = layui.layer;
+
+        let MODULE_PATH = rootPath + "/PostReportRowController/";
+
+        let STATUS_NAME = {0: '待核', 1: '已收', 2: '挂起'};
+        let ITEM_NAME = {
+            OUTLET_NOT_OWNED: '网点不在本企业名下',
+            QTY_EMPTY: '业务量空着没报',
+            QTY_NONPOSITIVE: '业务量零或负数',
+            PREV_DIFF_OPEN: '上期差异没核完又报本期',
+            WRITEOFF_EXCEED: '核销数大过上期挂下差异'
+        };
+
+        let cols = [
+            [
+                {title: '进门行次', field: 'rowNo', align: 'center', width: 90},
+                {title: '网点代号', field: 'siteNo', align: 'center'},
+                {title: '业务量(万件)', field: 'qty', align: 'center'},
+                {title: '投递频次', field: 'freq', align: 'center', templet: function (d) {
+                    return d.freq === 1 ? '每周五日' : (d.freq === 2 ? '每日' : '');
+                }},
+                {title: '上期差异', field: 'prevDiff', align: 'center'},
+                {title: '本期核销', field: 'writeOff', align: 'center'},
+                {title: '落地', field: 'status', align: 'center', templet: function (d) {
+                    return STATUS_NAME[d.status] || '';
+                }},
+                {title: '挂起前置项', field: 'itemCode', align: 'center', templet: function (d) {
+                    return ITEM_NAME[d.itemCode] || '';
+                }},
+                {title: '缘故', field: 'remark', align: 'center'}
+            ]
+        ];
+
+        function renderRows(batchNo) {
+            table.render({
+                elem: '#row-table',
+                url: MODULE_PATH + 'rows?batchNo=' + encodeURIComponent(batchNo),
+                method: 'get',
+                cols: cols,
+                page: false,
+                skin: 'line'
+            });
+        }
+
+        function fillReceipt(rc) {
+            if (!rc) {
+                layer.msg('该批次还没有回执');
+                return;
+            }
+            let outcomes = {1: '核收', 2: '空期', 3: '整期退回', 4: '复核'};
+            $('#rc-outcome').text(outcomes[rc.outcome] || '—');
+            $('#rc-total').text(rc.totalRows);
+            $('#rc-accepted').text(rc.acceptedRows);
+            $('#rc-suspended').text(rc.suspendedRows);
+            $('#rc-merged').text(rc.mergedRows);
+            $('#rc-qty').text(rc.acceptedQty);
+            $('#rc-msg').text(rc.message || '');
+        }
+
+        // 整册报送：唯一落账入口
+        form.on('submit(book-submit)', function (data) {
+            let f = data.field;
+            let rows = [];
+            if ($.trim(f.rowsText) !== '') {
+                try {
+                    rows = JSON.parse(f.rowsText);
+                } catch (e) {
+                    layer.msg('逐行报表不是合法 JSON：' + e.message);
+                    return false;
+                }
+            }
+            $.ajax({
+                url: MODULE_PATH + 'submitBook',
+                type: 'post',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    batchNo: f.batchNo, period: f.period, companySiteNo: f.companySiteNo, rows: rows
+                }),
+                success: function (res) {
+                    if (res.code === 200) {
+                        fillReceipt(res.data);
+                        if (f.batchNo) {
+                            renderRows(f.batchNo);
+                        }
+                    } else {
+                        layer.msg(res.msg || '报送失败');
+                    }
+                }
+            });
+            return false;
+        });
+
+        $('#btn-receipt').on('click', function () {
+            let batchNo = $('input[name="batchNo"]').val();
+            if (!batchNo) { layer.msg('先填批次号'); return; }
+            $.get(MODULE_PATH + 'receipt', {batchNo: batchNo}, function (res) {
+                if (res.code === 200) { fillReceipt(res.data); }
+            });
+        });
+
+        $('#btn-rows').on('click', function () {
+            let batchNo = $('input[name="batchNo"]').val();
+            if (!batchNo) { layer.msg('先填批次号'); return; }
+            renderRows(batchNo);
+        });
+
+        $('#btn-reconcile').on('click', function () {
+            let period = $('input[name="period"]').val();
+            $.get(MODULE_PATH + 'reconcile', period ? {period: period} : {}, function (res) {
+                if (res.code !== 200) { layer.msg(res.msg || '对账失败'); return; }
+                let d = res.data;
+                if (d.balanced) {
+                    $('#mismatch-card').hide();
+                    layer.msg('接平：逐行 ' + d.rowTotal + ' 行（收' + d.rowAccepted + ' 挂' + d.rowSuspended
+                        + '），业务量 ' + d.rowQty + ' 万件，与回执同口径', {icon: 1, time: 6000});
+                } else {
+                    $('#mismatch-card').show();
+                    layer.msg('接不平：逐行业务量 ' + d.rowQty + '，回执 ' + d.receiptQty
+                        + '，差 ' + d.diffQty + '；见下方点出的行', {icon: 2, time: 8000});
+                    table.render({
+                        elem: '#mismatch-table',
+                        data: d.mismatchedRows,
+                        cols: cols,
+                        page: true,
+                        skin: 'line'
+                    });
+                }
+            });
+        });
+    });
+</script>
+</body>
+</html>

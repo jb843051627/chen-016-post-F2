@@ -112,18 +112,28 @@ CREATE TABLE IF NOT EXISTS t_post_rectify_card (
 
 CREATE TABLE IF NOT EXISTS t_post_report_row (
   id bigint NOT NULL COMMENT '主键',
-  batch_no varchar(64) DEFAULT NULL COMMENT '月度业务报表报送批次号',
-  row_no int DEFAULT NULL COMMENT '原报表行次',
-  item_code varchar(64) DEFAULT NULL COMMENT '被挑出的前置项代号',
+  batch_no varchar(64) DEFAULT NULL COMMENT '报送批次号(一沓一个，同月可先后导入多沓)',
+  period_no varchar(64) DEFAULT NULL COMMENT '报送期号(按企业一期，多沓同属一期)',
+  site_no varchar(64) DEFAULT NULL COMMENT '报送企业底档字号',
+  outlet_no varchar(64) DEFAULT NULL COMMENT '网点行址代号',
+  row_no int DEFAULT NULL COMMENT '本期行序号(进门先后钉死，合并行认前头)',
+  delivery_freq int DEFAULT NULL COMMENT '投递频次 5每周五日 7每日',
   qty decimal(12,2) DEFAULT NULL COMMENT '本行报送业务量(万件)',
+  prev_diff decimal(12,2) DEFAULT NULL COMMENT '上期挂账差异(万件)',
+  write_off_amt decimal(12,2) DEFAULT NULL COMMENT '本期核销上期差异数(万件)',
+  item_code varchar(64) DEFAULT NULL COMMENT '被挑落挂起的前置项代号',
   status int DEFAULT NULL COMMENT '行落地情形 0待核 1已收 2挂起',
   del_flag int DEFAULT '0' COMMENT '删除标记 0正常 1删除',
   create_by varchar(64) DEFAULT NULL COMMENT '创建者',
   create_time datetime DEFAULT NULL COMMENT '创建时间',
   update_by varchar(64) DEFAULT NULL COMMENT '更新者',
   update_time datetime DEFAULT NULL COMMENT '更新时间',
-  remark varchar(500) DEFAULT NULL COMMENT '备注',
-  PRIMARY KEY (id)
+  remark varchar(500) DEFAULT NULL COMMENT '备注(挂起缘故一句话)',
+  PRIMARY KEY (id),
+  KEY idx_report_period (period_no, del_flag),
+  KEY idx_report_batch (batch_no),
+  KEY idx_report_outlet (period_no, site_no, outlet_no, del_flag),
+  UNIQUE KEY uk_report_batch (batch_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='月度业务报表核收行';
 
 -- 初始底档数据（在册、已注销两类各一条）

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.pollix.at/thymeleaf/shiro">
+<head>
+    <th:block th:include="include :: header('月度业务报表整册核收')"/>
+</head>
+<body class="pear-container">
+
+<div class="layui-card">
+    <div class="layui-card-body">
+        <form class="layui-form" id="book-head">
+            <div class="layui-form-item">
+                <label class="layui-form-label">报送期号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="periodNo" placeholder="如 2026-09" class="layui-input" lay-verify="required">
+                </div>
+                <label class="layui-form-label">企业底档字号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="siteNo" placeholder="如 YZ00" class="layui-input" lay-verify="required">
+                </div>
+                <label class="layui-form-label">本沓批次号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="batchNo" placeholder="一沓一个" class="layui-input" lay-verify="required">
+                </div>
+            </div>
+        </form>
+
+        <table class="layui-table" id="line-edit-table">
+            <thead>
+            <tr>
+                <th width="60">进门序</th>
+                <th>网点行址代号</th>
+                <th width="140">本期业务量(万件)</th>
+                <th width="150">投递频次</th>
+                <th width="150">上期挂账差异</th>
+                <th width="150">本期核销数</th>
+                <th width="90">操作</th>
+            </tr>
+            </thead>
+            <tbody id="line-edit-body"></tbody>
+        </table>
+
+        <div class="layui-form-item">
+            <button type="button" class="pear-btn pear-btn-md" id="btn-add-line">
+                <i class="layui-icon layui-icon-add-1"></i> 添一行
+            </button>
+            <button shiro:hasPermission="post:postReportRow:submit" type="button"
+                    class="pear-btn pear-btn-md pear-btn-primary" id="btn-submit-book">
+                <i class="layui-icon layui-icon-ok"></i> 整册报送
+            </button>
+            <span class="layui-badge layui-bg-gray" style="margin-left:12px">
+                行序号进门那刻钉死，页面不数；同网点同期两行自动并一行，认前头
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="layui-card" id="receipt-card" style="display:none">
+    <div class="layui-card-header">回执（服务层对库逐行一次算齐）</div>
+    <div class="layui-card-body">
+        <table class="layui-table" style="width:auto">
+            <tr>
+                <th>落点</th><td id="r-outcome"></td>
+                <th>原期行数</th><td id="r-total"></td>
+                <th>已收</th><td id="r-accepted"></td>
+                <th>挂起</th><td id="r-suspended"></td>
+            </tr>
+        </table>
+        <div id="r-text" style="margin-bottom:8px;color:#666"></div>
+        <table class="layui-table" id="r-susp-table" style="display:none">
+            <thead><tr><th width="100">本期行序号</th><th>网点</th><th width="220">挂起前置项</th><th>缘故</th></tr></thead>
+            <tbody id="r-susp-body"></tbody>
+        </table>
+        <table class="layui-table" id="r-diff-table" style="display:none">
+            <thead><tr><th width="100">行序号</th><th>网点</th><th width="160">字段</th><th>库内</th><th>本次报</th></tr></thead>
+            <tbody id="r-diff-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="layui-card">
+    <div class="layui-card-body">
+        <form class="layui-form" onsubmit="return false">
+            <div class="layui-form-item">
+                <label class="layui-form-label">查期内逐行</label>
+                <div class="layui-input-inline">
+                    <input type="text" id="query-period" placeholder="期号" class="layui-input">
+                </div>
+                <button class="pear-btn pear-btn-md pear-btn-primary" id="btn-query">
+                    <i class="layui-icon layui-icon-search"></i> 查询
+                </button>
+                <button shiro:hasPermission="post:postReportRow:reconcile"
+                        class="pear-btn pear-btn-md" id="btn-reconcile">全辖对账</button>
+            </div>
+        </form>
+        <table class="layui-table" id="period-table">
+            <thead>
+            <tr>
+                <th width="90">本期行序号</th>
+                <th>批次号</th>
+                <th>企业字号</th>
+                <th>网点代号</th>
+                <th width="130">业务量(万件)</th>
+                <th width="120">投递频次</th>
+                <th width="120">上期差异</th>
+                <th width="120">本期核销</th>
+                <th width="90">落点</th>
+                <th>挂起缘故</th>
+            </tr>
+            </thead>
+            <tbody id="period-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="layui-card" id="reconcile-card" style="display:none">
+    <div class="layui-card-header">全辖对账（逐企业桶，不平点到行，不按比例摊）</div>
+    <div class="layui-card-body">
+        <table class="layui-table" style="width:auto">
+            <tr>
+                <th>屏上总数</th><td id="c-screen"></td>
+                <th>逐行加总</th><td id="c-row"></td>
+                <th>结论</th><td id="c-balanced"></td>
+            </tr>
+        </table>
+        <div id="c-text" style="color:#666"></div>
+        <table class="layui-table" id="c-bucket-table">
+            <thead><tr><th>企业字号</th><th>屏上</th><th>逐行</th><th>是否接平</th><th>涉及行序号</th></tr></thead>
+            <tbody id="c-bucket-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<th:block th:include="include :: footer"/>
+<script th:inline="javascript">
+    layui.use(['form', 'jquery', 'layer'], function () {
+        let form = layui.form;
+        let $ = layui.jquery;
+        let layer = layui.layer;
+        let PATH = rootPath + "/PostReportRowController/";
+
+        function freqOptions() {
+            return '<select class="line-freq">'
+                + '<option value="5">每周五日</option>'
+                + '<option value="7">每日</option>'
+                + '</select>';
+        }
+
+        function addLine() {
+            let idx = $('#line-edit-body tr').length + 1;
+            let tr = '<tr>'
+                + '<td class="line-seq">' + idx + '</td>'
+                + '<td><input class="layui-input line-outlet"></td>'
+                + '<td><input class="layui-input line-qty"></td>'
+                + '<td>' + freqOptions() + '</td>'
+                + '<td><input class="layui-input line-prev" value="0"></td>'
+                + '<td><input class="layui-input line-writeoff" value="0"></td>'
+                + '<td><button type="button" class="pear-btn pear-btn-danger pear-btn-sm btn-del-line">删</button></td>'
+                + '</tr>';
+            $('#line-edit-body').append(tr);
+        }
+
+        $('#btn-add-line').on('click', addLine);
+        $(document).on('click', '.btn-del-line', function () {
+            $(this).closest('tr').remove();
+            $('#line-edit-body tr').each(function (i) {
+                $(this).find('.line-seq').text(i + 1);
+            });
+        });
+
+        $('#btn-submit-book').on('click', function () {
+            let head = {};
+            $.each($('#book-head').serializeArray(), function (_, f) {
+                head[f.name] = f.value;
+            });
+            let lines = [];
+            $('#line-edit-body tr').each(function () {
+                let $t = $(this);
+                lines.push({
+                    outletNo: $t.find('.line-outlet').val(),
+                    qty: $t.find('.line-qty').val() === '' ? null : Number($t.find('.line-qty').val()),
+                    deliveryFreq: Number($t.find('.line-freq').val()),
+                    prevDiff: Number($t.find('.line-prev').val() || 0),
+                    writeOffAmt: Number($t.find('.line-writeoff').val() || 0)
+                });
+            });
+            let loading = layer.load();
+            $.ajax({
+                url: PATH + 'submit', type: 'post', contentType: 'application/json',
+                data: JSON.stringify({
+                    periodNo: head.periodNo, siteNo: head.siteNo, batchNo: head.batchNo, lines: lines
+                }),
+                success: function (res) {
+                    layer.close(loading);
+                    renderReceipt(res.data);
+                },
+                error: function () {
+                    layer.close(loading);
+                    layer.msg('报送失败', {icon: 2});
+                }
+            });
+        });
+
+        function statusName(s) {
+            return s === 1 ? '已收' : (s === 2 ? '挂起' : '待核');
+        }
+
+        function renderReceipt(r) {
+            $('#receipt-card').show();
+            $('#r-outcome').text(r.outcome + '　' + (r.outcomeText || ''));
+            $('#r-total').text(r.totalRows);
+            $('#r-accepted').text(r.acceptedRows);
+            $('#r-suspended').text(r.suspendedRows);
+            $('#r-text').text(r.outcomeText || '');
+
+            let $sb = $('#r-susp-body').empty();
+            if (r.suspended && r.suspended.length) {
+                $('#r-susp-table').show();
+                $.each(r.suspended, function (_, s) {
+                    $sb.append('<tr><td>' + s.rowNo + '</td><td>' + (s.outletNo || '')
+                        + '</td><td>' + s.itemCode + '</td><td>' + (s.reason || '') + '</td></tr>');
+                });
+            } else {
+                $('#r-susp-table').hide();
+            }
+            let $db = $('#r-diff-body').empty();
+            if (r.reviewDiffs && r.reviewDiffs.length) {
+                $('#r-diff-table').show();
+                $.each(r.reviewDiffs, function (_, d) {
+                    $db.append('<tr><td>' + (d.rowNo == null ? '' : d.rowNo) + '</td><td>' + (d.outletNo || '')
+                        + '</td><td>' + d.field + '</td><td>' + (d.stored == null ? '' : d.stored)
+                        + '</td><td>' + (d.submitted == null ? '' : d.submitted) + '</td></tr>');
+                });
+            } else {
+                $('#r-diff-table').hide();
+            }
+        }
+
+        $('#btn-query').on('click', function () {
+            let periodNo = $('#query-period').val();
+            if (!periodNo) { layer.msg('先填期号', {icon: 3}); return; }
+            let loading = layer.load();
+            $.post(PATH + 'list', {periodNo: periodNo}, function (rows) {
+                layer.close(loading);
+                let $b = $('#period-body').empty();
+                $.each(rows, function (_, r) {
+                    $b.append('<tr><td>' + (r.rowNo == null ? '' : r.rowNo) + '</td><td>' + (r.batchNo || '')
+                        + '</td><td>' + (r.siteNo || '') + '</td><td>' + (r.outletNo || '')
+                        + '</td><td>' + (r.qty == null ? '' : r.qty) + '</td><td>' + (r.deliveryFreq == null ? '' : r.deliveryFreq)
+                        + '</td><td>' + (r.prevDiff == null ? '' : r.prevDiff) + '</td><td>' + (r.writeOffAmt == null ? '' : r.writeOffAmt)
+                        + '</td><td>' + statusName(r.status) + '</td><td>' + (r.remark || '') + '</td></tr>');
+                });
+            }).fail(function () { layer.close(loading); layer.msg('查询失败', {icon: 2}); });
+        });
+
+        $('#btn-reconcile').on('click', function () {
+            let periodNo = $('#query-period').val();
+            if (!periodNo) { layer.msg('先填期号', {icon: 3}); return; }
+            layer.prompt({title: '屏上各企业已收合计，JSON 形如 [{"siteNo":"YZ00","qty":120}]', formType: 2, area: ['420px', '160px']},
+                function (val, index) {
+                    let screen;
+                    try { screen = JSON.parse(val || '[]'); } catch (e) { layer.msg('JSON 不合法', {icon: 2}); return; }
+                    layer.close(index);
+                    let loading = layer.load();
+                    $.ajax({
+                        url: PATH + 'reconcile?periodNo=' + encodeURIComponent(periodNo),
+                        type: 'post', contentType: 'application/json', data: JSON.stringify(screen),
+                        success: function (c) {
+                            layer.close(loading);
+                            renderReconcile(c);
+                        },
+                        error: function () { layer.close(loading); layer.msg('对账失败', {icon: 2}); }
+                    });
+                });
+        });
+
+        function renderReconcile(c) {
+            $('#reconcile-card').show();
+            $('#c-screen').text(c.screenTotal);
+            $('#c-row').text(c.rowTotal);
+            $('#c-balanced').text(c.balanced ? '接平' : '不平').css('color', c.balanced ? '#339933' : '#cc0000');
+            $('#c-text').text(c.text || '');
+            let $b = $('#c-bucket-body').empty();
+            $.each(c.buckets, function (_, bk) {
+                let rowNos = (bk.rows || []).map(function (r) { return r.rowNo; }).join('、');
+                $b.append('<tr><td>' + bk.siteNo + '</td><td>' + bk.screenQty + '</td><td>' + bk.rowQty
+                    + '</td><td style="color:' + (bk.balanced ? '#339933' : '#cc0000') + '">'
+                    + (bk.balanced ? '平' : '不平') + '</td><td>' + rowNos + '</td></tr>');
+            });
+        }
+
+        addLine();
+    });
+</script>
+</body>
+</html>
